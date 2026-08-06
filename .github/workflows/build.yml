@@ -1,4 +1,4 @@
-name: Build APK from ZIP
+name: Build APK
 on: [push, workflow_dispatch]
 
 jobs:
@@ -8,26 +8,41 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Unzip uploaded project
-        run: |
-          unzip *.zip
-          # Locate project directory containing build.gradle
-          PROJECT_DIR=$(dirname $(find . -name "build.gradle*" -not -path "*/app/*" -not -path "*/.gradle/*" | head -n 1))
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Setup Gradle Environment
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Unzip & Auto-Fix Project
+        run: |
+          unzip -o *.zip
+          
+          # Locate root project folder
+          TARGET_DIR=$(dirname $(find . -name "build.gradle*" -not -path "*/app/*" -not -path "*/.gradle/*" | head -n 1))
+          echo "PROJECT_DIR=$TARGET_DIR" >> $GITHUB_ENV
+          cd "$TARGET_DIR"
+
+          # Generate gradlew executable if AI Studio omitted it
+          if [ ! -f "gradlew" ]; then
+            echo "gradlew wrapper missing. Generating..."
+            gradle wrapper
+          fi
+          chmod +x gradlew
+
+      - name: Accept Android SDK Licenses
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
       - name: Build Debug APK
         run: |
           cd ${{ env.PROJECT_DIR }}
-          chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --stacktrace
 
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
